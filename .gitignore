@@ -1,0 +1,11 @@
+.env
+certs/
+login.out
+cookies.txt
+*.log
+*.sqlite
+*.db
+__pycache__/
+node_modules/
+dist/
+build/

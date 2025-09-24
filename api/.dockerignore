@@ -1,0 +1,57 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Paket yöneticileri
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node artefacts
+node_modules/
+# lock dosyalarını ASLA ignore etmeyin; deterministik build için gerekli
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Transient / cache
+*.swp
+*.swo
+*.tmp
+*.log
+coverage/
+.cache/
+.tmp/
+
+# Frontend çıktıları (lokalde üretilenler)
+build/
+dist/
+.out/
+.next/
+.next/cache/
+storybook-static/
+
+# Test & örnekler
+__tests__/
+cypress/
+e2e/
+*.spec.*
+*.test.*
+
+# Env / gizli
+.env
+.env.*
+!.env.example
+
+# Docker ile ilgili yerel dosyalar (gerekmedikçe)
+docker-compose*.yml
+Dockerfile

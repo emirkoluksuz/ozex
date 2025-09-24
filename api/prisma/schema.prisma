@@ -1,0 +1,282 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/**
+ * -------------------- EXISTING --------------------
+ */
+
+enum AuditAction {
+  LOGIN
+  REFRESH
+  LOGOUT
+  REFRESH_REUSE_BLOCK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  phone        String   @unique
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions   Session[]
+  auditLogs  AuditLog[]
+
+  // 🔐 Cüzdan (tekil)
+  wallet       Wallet?
+  // 💸 Kullanıcının para yatır/çek talepleri
+  fundingReqs  FundingRequest[]
+
+  // ⭐ Kullanıcı favorileri (tekil ilişki)
+  favorite     Favorite?
+
+  // 📈 Emirler
+  orders       Order[]
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshJti String  @unique
+  remember   Boolean @default(false)
+  userAgent  String?
+  ip         String?
+
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([userId, revokedAt])
+}
+
+model AuditLog {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action    AuditAction
+  ip        String?
+  userAgent String?
+  createdAt DateTime    @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/**
+ * -------------------- WALLET / TRANSACTIONS --------------------
+ */
+
+model Wallet {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  balance Decimal @default(0) @db.Decimal(38, 18)
+  version Int     @default(1)
+
+  txns Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum TxType {
+  DEPOSIT
+  WITHDRAW
+  ADJUST
+  TRADE_BUY
+  TRADE_SELL
+  // 🔒/🔓 Marjin hareketleri + realize PnL
+  MARGIN_LOCK
+  MARGIN_RELEASE
+  REALIZED_PNL
+}
+
+model Transaction {
+  id       String  @id @default(cuid())
+
+  walletId String
+  wallet   Wallet  @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  type         TxType
+  amount       Decimal @db.Decimal(38, 18)
+  balanceAfter Decimal @db.Decimal(38, 18)
+  note         String?
+  meta         Json?
+
+  // 🧾 İlgili emir (opsiyonel)
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  idempotencyKey String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([walletId, createdAt])
+  @@index([orderId])
+  @@index([walletId, type, createdAt]) // 💡 yeni
+}
+
+/**
+ * -------------------- FUNDING REQUESTS --------------------
+ */
+
+enum FundingType {
+  DEPOSIT
+  WITHDRAW
+}
+
+enum FundingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model FundingRequest {
+  id     String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type   FundingType
+  amount Decimal       @db.Decimal(38, 18)
+  status FundingStatus @default(PENDING)
+
+  reference  String?
+  adminNote  String?
+  processedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status, createdAt])
+}
+
+/**
+ * -------------------- FAVORITES (NEW) --------------------
+ */
+
+model Favorite {
+  // Kullanıcı başına tek kayıt
+  userId    String @id
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Semboller (ör. ["BTCUSDT","XAUUSD","AAPL"])
+  symbols   Json
+
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * -------------------- TRADING CORE (NEW) --------------------
+ */
+
+/// Emir yönü
+enum OrderSide {
+  BUY
+  SELL
+}
+
+/// Emir tipi
+enum OrderType {
+  MARKET
+  LIMIT
+  STOP
+}
+
+/// Emir/pozisyon durumu
+enum OrderStatus {
+  OPEN     // açık pozisyon
+  CLOSED   // kapandı (TP/SL/manuel)
+  CANCELED // bekleyen emirler için
+}
+
+model Instrument {
+  id           String  @id @default(cuid())
+  /// BE eşlemesi için benzersiz anahtar (örn. "BTCUSDT", "XAUUSD", "AAPL")
+  key          String  @unique
+  /// UI'da görünen sembol (örn. "BTC/USDT", "XAU/USD")
+  display      String
+  /// Kotasyon para birimi (USD/USDT/TRY…)
+  quoteCcy     String  @default("USD")
+  /// 1 lotun sözleşme büyüklüğü (XAU=100 oz, FX=100000, BTC futures=5 gibi)
+  contractSize Decimal @default(1)   @db.Decimal(38, 18)
+  /// Tick adımı (fiyat artış min.)
+  tickSize     Decimal @default(0.01) @db.Decimal(38, 18)
+  /// Lot adımı (örn. 0.01)
+  lotStep      Decimal @default(0.01) @db.Decimal(38, 18)
+  /// Min lot (örn. 0.01)
+  minLot       Decimal @default(0.01) @db.Decimal(38, 18)
+  /// Maks kaldıraç (örn. 400 => 1:400)
+  leverageMax  Int     @default(400)
+
+  isActive     Boolean @default(true)
+
+  orders       Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model Order {
+  id            String       @id @default(cuid())
+
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  instrumentId  String
+  instrument    Instrument   @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+
+  side          OrderSide
+  type          OrderType    @default(MARKET)
+  status        OrderStatus  @default(OPEN)
+
+  /// Miktar (lot)
+  qtyLot        Decimal      @db.Decimal(38, 18)
+  /// Kullanılan kaldıraç (örn. 400)
+  leverageUsed  Int
+
+  /// Giriş fiyatı (işlem açılırken)
+  entryPrice    Decimal      @db.Decimal(38, 18)
+  openedAt      DateTime     @default(now())
+
+  /// Kullanıcı tarafından girilen TP/SL
+  tpPrice       Decimal?     @db.Decimal(38, 18)
+  slPrice       Decimal?     @db.Decimal(38, 18)
+
+  /// Açılışta kilitlenen teminat (USD)
+  marginUsd     Decimal      @db.Decimal(38, 18)
+
+  /// Kapanış bilgileri
+  closePrice     Decimal?     @db.Decimal(38, 18)
+  closedAt       DateTime?
+  realizedPnlUsd Decimal?     @db.Decimal(38, 18)
+
+  /// Esnek alan
+  meta          Json?
+
+  /// İlişkili cüzdan hareketleri
+  transactions  Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status, openedAt])
+  @@index([instrumentId, status])
+  @@index([userId, instrumentId, status]) // 💡 yeni
+}

@@ -15,7 +15,6 @@ type PlacedOrder = {
   side?: "BUY" | "SELL";
   qtyLot?: number;
   price?: number;
-  // gerekirse genişletilebilir
 };
 
 const clean = (s: string) => String(s ?? "").replace(/[^\d.,-]/g, "");
@@ -265,22 +264,12 @@ export default function TradePanel({
         "X-Idempotency-Key": idem,
       };
 
-      const postOnce = (base: string) =>
-        http.post<PlacedOrder | { order: PlacedOrder }>(`${base}`, body, { headers });
-
-      let res;
-      try {
-        res = await postOnce("/api/orders");
-      } catch (e1: unknown) {
-        const status = isAxiosError(e1) ? e1.response?.status : undefined;
-        const text = isAxiosError(e1) ? e1.response?.data : undefined;
-        const cannot = typeof text === "string" && text.startsWith("Cannot POST");
-        if (status === 404 || cannot) {
-          res = await postOnce("/orders");
-        } else {
-          throw e1;
-        }
-      }
+      // ❗ Sadece /api/orders'a gönder — fallback yok
+      const res = await http.post<PlacedOrder | { order: PlacedOrder }>(
+        "/api/orders",
+        body,
+        { headers },
+      );
 
       const payload =
         res?.data && typeof res.data === "object" && res.data !== null && "order" in res.data

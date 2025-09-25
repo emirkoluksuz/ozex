@@ -13,13 +13,13 @@
     Permissions-Policy "camera=(), microphone=(), geolocation=()"
   }
 
-  # Statikler uzun süre cache’lenir
+  # Statikler uzun cache
   @static path /_next/* /assets/* /static/* /favicon.ico /robots.txt
   header @static Cache-Control "public, max-age=31536000, immutable"
 
-  # HTML’ler cache’lenmesin (özellikle Next SSR)
-  @html header Content-Type text/html*
-  header @html Cache-Control "no-store"
+  # Dinamik/HTML cache'lenmesin
+  @dynamic not path /_next/* /assets/* /static/* /favicon.ico /robots.txt
+  header @dynamic Cache-Control "no-store"
 }
 
 fonborsa.com {
@@ -45,11 +45,13 @@ manager.fonborsa.com {
 
 api.fonborsa.com {
   import common
-  # Eğer CORS’u Nest’te yönetiyorsan ek header gerekmez.
-  # Dilersen gerçek IP’yi backend’e ilet:
+
+  # ⚠️ CORS burada yönetilmiyor; NestJS (main.ts) enableCors kullanıyor.
+  # Preflight/OPTIONS'u da API cevaplayacak.
+
   reverse_proxy api:4000 {
     header_up Host {host}
     header_up X-Real-IP {remote}
-    # X-Forwarded-* zaten Caddy tarafından sete edilir.
+    # X-Forwarded-* başlıklarını Caddy zaten ekler.
   }
 }

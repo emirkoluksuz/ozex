@@ -15,7 +15,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 
 /** CORS origin parser: string + regex destekli (ENV: CORS_ORIGINS) */
 function parseCorsOrigins(): (string | RegExp)[] {
-  const raw = process.env.CORS_ORIGINS; // .env ile uyumlu
+  const raw = process.env.CORS_ORIGINS;
   const defaults = ['http://localhost:3000', 'http://127.0.0.1:3000'];
   if (!raw) return defaults;
   return Array.from(
@@ -48,18 +48,45 @@ function buildConnectSrc(allowlist: (string | RegExp)[]) {
   const isDev = process.env.NODE_ENV !== 'production';
   const fromCors = allowlist.filter((x): x is string => typeof x === 'string');
 
-  const wssFromCors = fromCors
-    .map(httpsToWss)
-    .filter((x): x is string => !!x);
+  const wssFromCors = fromCors.map(httpsToWss).filter((x): x is string => !!x);
 
   const fromEnv =
-    process.env.CSP_CONNECT_SRC
-      ?.split(',')
-      .map((s) => s.trim())
-      .filter(Boolean) ?? [];
+    process.env.CSP_CONNECT_SRC?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
 
   const devExtras = isDev ? ['http://localhost:4000', 'ws://localhost:4000'] : [];
   return Array.from(new Set(["'self'", ...fromCors, ...wssFromCors, ...devExtras, ...fromEnv]));
+}
+
+/** CORS izin kontrolü */
+function corsOriginChecker(allowlist: (string | RegExp)[]) {
+  return (origin: string | undefined, cb: (err: Error | null, ok?: boolean) => void) => {
+    // null/undefined Origin (healthcheck, server-to-server, curl) daima serbest
+    if (!origin) return cb(null, true);
+    const ok = allowlist.some((entry) =>
+      typeof entry === 'string' ? entry === origin : entry.test(origin),
+    );
+    return ok ? cb(null, true) : cb(new Error(`CORS blocked for origin: ${origin}`), false);
+  };
+}
+
+/** Socket.IO için CORS'u Nest IoAdapter üzerinde aynı whitelist ile uygula */
+class CorsIoAdapter extends IoAdapter {
+  constructor(private readonly appRef: any, private readonly allowlist: (string | RegExp)[]) {
+    super(appRef);
+  }
+  override createIOServer(port: number, options?: any) {
+    const server = super.createIOServer(port, {
+      ...options,
+      cors: {
+        origin: (origin: string | undefined, cb: (err: Error | null, ok?: boolean) => void) =>
+          corsOriginChecker(this.allowlist)(origin, cb),
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Authorization', 'Content-Type'],
+      },
+    });
+    return server;
+  }
 }
 
 async function bootstrap() {
@@ -77,20 +104,7 @@ async function bootstrap() {
   // CORS
   const allowlist = parseCorsOrigins();
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, ok?: boolean) => void
-    ) => {
-      // ❗ null/undefined Origin (healthcheck, server-to-server, curl) daima serbest
-      if (!origin) return callback(null, true);
-
-      const ok = allowlist.some((entry) =>
-        typeof entry === 'string' ? entry === origin : entry.test(origin),
-      );
-      return ok
-        ? callback(null, true)
-        : callback(new Error(`CORS blocked for origin: ${origin}`), false);
-    },
+    origin: corsOriginChecker(allowlist),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: [
@@ -194,8 +208,8 @@ async function bootstrap() {
     return next();
   });
 
-  // Socket.IO adapter
-  app.useWebSocketAdapter(new IoAdapter(app));
+  // Socket.IO adapter (CORS whitelist ile)
+  app.useWebSocketAdapter(new CorsIoAdapter(app, allowlist));
 
   // Basit health endpoint (compose healthcheck için)
   app.getHttpAdapter().get('/health', (_req: any, res: any) => res.status(200).send('ok'));
@@ -219,7 +233,6 @@ async function bootstrap() {
     });
   }
 
-  // Konteyner içinde dışarıya açılmak için host'u explicit veriyoruz
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server on http://localhost:${port}`);
   console.log(`🔓 CORS allowlist:`, allowlist);

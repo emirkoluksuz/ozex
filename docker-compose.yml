@@ -12,10 +12,14 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - landing
-      - trader
-      - manager
-      - api
+      landing:
+        condition: service_healthy
+      trader:
+        condition: service_healthy
+      manager:
+        condition: service_healthy
+      api:
+        condition: service_healthy
 
   landing:
     build:
@@ -31,10 +35,11 @@ services:
       - PORT=3000
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
+      - TZ=Europe/Istanbul
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -54,10 +59,11 @@ services:
       - PORT=3001
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
+      - TZ=Europe/Istanbul
     expose:
       - "3001"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3001/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -77,10 +83,11 @@ services:
       - PORT=3002
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
+      - TZ=Europe/Istanbul
     expose:
       - "3002"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3002/"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3002/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -95,6 +102,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
+      - TZ=Europe/Istanbul
       - DATABASE_URL=${DATABASE_URL}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
@@ -103,16 +111,47 @@ services:
       - JWT_REFRESH_TTL=${JWT_REFRESH_TTL}
       - ADMIN_API_KEY=${ADMIN_API_KEY}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN}
+      # TV bridge ile aynı olmalı:
+      - TV_BRIDGE_SHARED_SECRET=${TV_BRIDGE_SHARED_SECRET}
     expose:
       - "4000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:4000/health >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  tv_bridge:
+    build:
+      context: ./tv_bridge
+      dockerfile: Dockerfile
+    container_name: tv_bridge
+    restart: unless-stopped
+    environment:
+      # API'ya container ağı üzerinden gider → http://api:4000
+      - API_URL=http://api:4000/api/internal/tv/prices
+      # Sembol listeni istediğin gibi düzenleyebilirsin:
+      - SYMS=BINANCE:BTCUSDT,FOREXCOM:EURUSD,FOREXCOM:XAUUSD,BIST:XU100,BIST:THYAO,NASDAQ:AAPL,FOREXCOM:USDTRY
+      # API ile aynı secret
+      - TV_BRIDGE_SHARED_SECRET=${TV_BRIDGE_SHARED_SECRET}
+      # Buradaki ORIGIN, CORS allowlist'inde olmalı (CORS_ORIGINS içinde)
+      - BRIDGE_ORIGIN=https://trader.fonborsa.com
+      - POST_INTERVAL_SEC=0.5
+      - TZ=Europe/Istanbul
+    depends_on:
+      api:
+        condition: service_healthy
+    # Sağlık kontrolü opsiyonel; basit bir DNS/başlatma kontrolü:
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport socket,sys; socket.gethostbyname('api'); sys.exit(0)\nPY"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   db:
     image: postgres:16-alpine
@@ -122,13 +161,14 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TZ=Europe/Istanbul
     volumes:
       - pg_data:/var/lib/postgresql/data
-    # Güvenlik için dışa açman gerekmiyorsa aşağıdaki portu yoruma alabilirsin.
-    ports:
-      - "5432:5432"
+    # Prod'da dışa açman gerekmiyorsa yoruma al
+    # ports:
+    #   - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h 127.0.0.1"]
       interval: 10s
       timeout: 5s
       retries: 5

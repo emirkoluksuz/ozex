@@ -3,25 +3,23 @@ import { Controller, Get, Param, Header, NotFoundException } from '@nestjs/commo
 import { Public } from '../common/public.decorator';
 import { PriceService } from './price.service';
 
-function normalizeSymbolParam(raw: string): string {
-  // BTC%2FUSDT, btc/usdt,  btc%2fusdt  ->  BTC/USDT
-  const decoded = decodeURIComponent(String(raw || ''));
-  return decoded.trim().toUpperCase();
+// "BTC%2FUSDT", "btc/usdt" → display: "BTC/USDT", lookup: "BTCUSDT"
+function normalizeSymbolParam(raw: string): { display: string; lookup: string } {
+  const decoded = decodeURIComponent(String(raw || '')).trim().toUpperCase();
+  const lookup = decoded.replace(/[^A-Z0-9]/g, ''); // ayraçları kaldır
+  return { display: decoded, lookup };
 }
 
 // İç temsili tekilleştirip dışarıya sabit şema ile veren küçük yardımcı
 function toPublicRow(st: any) {
   return {
     ...st,
-    // changeDaily veya change24h hangisi varsa onu kullan; ikisi de yoksa 0
     change24h: Number.isFinite(st?.change24h)
       ? st.change24h
       : Number.isFinite(st?.changeDaily)
       ? st.changeDaily
       : 0,
-    // debug/izleme için dünkü kapanış varsa geçir
     ...(Number.isFinite(st?.prevClose) ? { prevClose: st.prevClose } : {}),
-    // ✅ leverage her zaman dönsün; yoksa 400
     leverage: Number.isFinite(st?.leverage) ? st.leverage : 400,
   };
 }
@@ -40,10 +38,10 @@ export class PricePublicController {
   @Get(':symbol')
   @Header('Cache-Control', 'no-store')
   one(@Param('symbol') symbolParam: string) {
-    const symbol = normalizeSymbolParam(symbolParam);
-    const st = this.prices.publicView(symbol);
+    const { display, lookup } = normalizeSymbolParam(symbolParam);
+    const st = this.prices.publicView(lookup);
     if (!st) {
-      throw new NotFoundException(`Symbol not found: ${symbol}`);
+      throw new NotFoundException(`Symbol not found: ${display}`);
     }
     return toPublicRow(st);
   }

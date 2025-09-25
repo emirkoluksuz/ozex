@@ -13,18 +13,17 @@ import {
 import { OrdersService } from "./orders.service";
 
 type Side = "BUY" | "SELL";
-type Type = "MARKET" | "LIMIT" | "STOP"; // şimdilik servise göndermiyoruz
+type Type = "MARKET" | "LIMIT" | "STOP";
 
 type OpenDto = {
-  symbolKey?: string;     // örn: "BTCUSDT", "XAUUSD"
+  symbolKey?: string;     // örn: "BTCUSDT", "BTC/USDT", "XAUUSD"
   instrumentKey?: string; // alternatif ad
   side: Side;             // BUY | SELL
   type?: Type;            // default MARKET (şema), servise aktarılmıyor
   qtyLot: number;         // lot
   tpPrice?: number;
   slPrice?: number;
-
-  // ⬇️ BE fiyat doğrulaması için ekledik
+  // BE fiyat doğrulaması için
   entryPrice?: number;
   price?: number;         // alias
 };
@@ -35,7 +34,12 @@ function pickUserId(req: any): string {
   return req?.user?.id || req?.user?.userId || req?.user?.sub;
 }
 
-// ufak bir tarih formatlayıcı (ISO'yu kısa metne çevirir)
+// "BTC/USDT" | "btc-usdt" | "btc_usdt" → "BTCUSDT"
+function normKey(s?: string) {
+  return (s ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+// ISO → kısa metin
 function fmt(ts?: Date | string | null) {
   if (!ts) return undefined;
   const d = new Date(ts);
@@ -48,7 +52,7 @@ function fmt(ts?: Date | string | null) {
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
 }
 
-@Controller("orders")
+@Controller("/api/orders")
 export class OrdersController {
   constructor(private readonly svc: OrdersService) {}
 
@@ -57,17 +61,18 @@ export class OrdersController {
     const userId = pickUserId(req);
     if (!userId) throw new UnauthorizedException("USER_NOT_RESOLVED");
 
-    const symbolKey = dto.symbolKey ?? dto.instrumentKey;
+    const rawKey = dto.symbolKey ?? dto.instrumentKey;
+    const symbolKey = normKey(rawKey);
     if (!symbolKey) throw new BadRequestException("symbolKey is required");
     if (!Number.isFinite(dto.qtyLot) || dto.qtyLot <= 0) {
       throw new BadRequestException("qtyLot must be > 0");
     }
 
     // Idempotency-Key (çift tıklama koruması)
-    const idem =
-      (req.headers["x-idempotency-key"] as string) ||
-      (req.headers["idempotency-key"] as string) ||
-      (req.headers["idempotency-key"] as string) || // Node header’ları lowercase gelir; emniyet için bıraktık
+    const headers = req?.headers ?? {};
+    const idem: string | undefined =
+      headers["x-idempotency-key"] ||
+      headers["idempotency-key"] ||
       undefined;
 
     const result = await this.svc.openOrder(
@@ -78,16 +83,12 @@ export class OrdersController {
         qtyLot: dto.qtyLot,
         tpPrice: dto.tpPrice,
         slPrice: dto.slPrice,
-        // ⬇️ BE’nin PRICE_REQUIRED koşulu için fiyatı geçiriyoruz
         entryPrice: dto.entryPrice ?? dto.price,
       },
       idem,
     );
 
-    // service { order } veya { order, duplicated } döndürüyor
     const order = (result as any).order ?? result;
-
-    // UI bekleyen forma yakın ufak zenginleştirme
     return {
       ok: true,
       duplicated: Boolean((result as any).duplicated),
@@ -125,7 +126,6 @@ export class OrdersController {
       s === "OPEN" || s === "CLOSED" || s === "CANCELED" ? (s as any) : undefined;
 
     const rows = await this.svc.listOrders(userId, ok);
-    // Frontend OrdersGrid/HistoryGrid res?.orders?.map(...) bekliyor → { orders: [...] } döndürüyoruz
     return {
       orders: rows.map((o) => ({
         ...o,

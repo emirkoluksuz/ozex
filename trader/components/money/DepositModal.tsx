@@ -253,7 +253,8 @@ export default function DepositModal({
     if (step === "crypto" || step === "amount") {
       if (!amountValid) return;
       if (step === "crypto" && (!coin || !network || !address)) return;
-      handleFinalize().catch(() => {}); // eslint uyarısını gider, hatayı yut
+      // ❗ UYARIYI ÖNLER: Sonucu bilerek yok sayıyoruz
+      void handleFinalize();
       return;
     }
   }

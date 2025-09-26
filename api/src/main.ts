@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
+import hpp from 'hpp';
 import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import rateLimit, { Options as RateLimitOptions, ipKeyGenerator } from 'express-rate-limit';
@@ -12,6 +13,7 @@ import { Logger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import { randomUUID } from 'crypto';
 
 /** CORS origin parser: string + regex destekli (ENV: CORS_ORIGINS) */
 function parseCorsOrigins(): (string | RegExp)[] {
@@ -47,12 +49,9 @@ function httpsToWss(u: string) {
 function buildConnectSrc(allowlist: (string | RegExp)[]) {
   const isDev = process.env.NODE_ENV !== 'production';
   const fromCors = allowlist.filter((x): x is string => typeof x === 'string');
-
   const wssFromCors = fromCors.map(httpsToWss).filter((x): x is string => !!x);
-
   const fromEnv =
     process.env.CSP_CONNECT_SRC?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
-
   const devExtras = isDev ? ['http://localhost:4000', 'ws://localhost:4000'] : [];
   return Array.from(new Set(["'self'", ...fromCors, ...wssFromCors, ...devExtras, ...fromEnv]));
 }
@@ -97,6 +96,18 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
 
+  // İstek-ID yoksa üret ve log/response'a koy
+  app.use((req: any, res: any, next: any) => {
+    const incoming = req.headers['x-request-id'] as string | undefined;
+    const id = incoming && String(incoming).trim() ? String(incoming) : randomUUID();
+    req.id = id;
+    res.setHeader('X-Request-Id', id);
+    next();
+  });
+
+  // Parametre kirlenmesi (HTTP Parameter Pollution) koruması
+  app.use(hpp());
+
   // Body limitleri
   app.use(json({ limit: '512kb' }));
   app.use(urlencoded({ extended: true, limit: '512kb' }));
@@ -122,12 +133,15 @@ async function bootstrap() {
     optionsSuccessStatus: 204,
   });
 
-  // Güvenlik başlıkları (CSP + COEP dev-friendly)
+  // Güvenlik başlıkları (CSP + COOP/COEP)
   const connectSrc = buildConnectSrc(allowlist);
   app.use(
     helmet({
       frameguard: { action: 'deny' },
-      referrerPolicy: { policy: 'no-referrer' },
+      referrerPolicy: { policy: 'no-referrer' }, // Caddy tarafında farklı policy set ediyorsan (strict-origin-when-cross-origin) burayı uyumlu yapabilirsin
+      crossOriginOpenerPolicy: { policy: 'same-origin' },
+      // COEP bazı 3rd-party script/fontlarda sorun çıkarabilir; prod'da test ederek aç
+      crossOriginEmbedderPolicy: false,
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
@@ -137,9 +151,9 @@ async function bootstrap() {
           "style-src": ["'self'", "'unsafe-inline'"],
           "font-src": ["'self'", "data:"],
           "connect-src": connectSrc,
+          // "frame-ancestors": ["'none'"], // X-Frame-Options: DENY ile uyumlu; istersen aç
         },
       },
-      crossOriginEmbedderPolicy: false,
     }),
   );
 
@@ -165,6 +179,7 @@ async function bootstrap() {
       path: req.originalUrl,
       timestamp: new Date().toISOString(),
       message: 'Çok fazla deneme yapıldı. Lütfen daha sonra tekrar deneyin.',
+      requestId: req.id,
     });
   };
   const makeLimiter = (opts: Partial<RateLimitOptions>) =>
@@ -222,8 +237,16 @@ async function bootstrap() {
       .setDescription('Local dev için otomatik API dokümantasyonu')
       .setVersion('0.1.0')
       .addBearerAuth()
-      .addCookieAuth('rt', { type: 'apiKey', in: 'cookie', name: 'rt', description: 'Refresh token cookie' })
-      .addApiKey({ type: 'apiKey', name: 'X-Admin-Key', in: 'header', description: 'Admin API anahtarı' }, 'admin-key')
+      .addCookieAuth('rt', {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'rt',
+        description: 'Refresh token cookie',
+      })
+      .addApiKey(
+        { type: 'apiKey', name: 'X-Admin-Key', in: 'header', description: 'Admin API anahtarı' },
+        'admin-key',
+      )
       .build();
 
     const doc = SwaggerModule.createDocument(app, cfg);
@@ -232,6 +255,9 @@ async function bootstrap() {
       swaggerOptions: { persistAuthorization: true },
     });
   }
+
+  // Graceful shutdown sinyalleri (SIGTERM/SIGINT)
+  app.enableShutdownHooks();
 
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server on http://localhost:${port}`);

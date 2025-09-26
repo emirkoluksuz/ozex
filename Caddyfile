@@ -1,16 +1,30 @@
+# 1) Tüm HTTP isteklerini kalıcı olarak HTTPS'e yönlendir
 :80 {
   redir https://{host}{uri} 308
 }
 
+# 2) Ortak ayarlar + güvenlik başlıkları
 (common) {
+  # Origin sertifikalarını kullanıyorsan:
   tls /etc/certs/origin-cert.pem /etc/certs/origin-key.pem
+
   encode zstd gzip
+
+  # Güvenlik başlıkları
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     X-Frame-Options "DENY"
     X-Content-Type-Options "nosniff"
     Referrer-Policy "strict-origin-when-cross-origin"
     Permissions-Policy "camera=(), microphone=(), geolocation=()"
+
+    # İleride sıkılaştırmak üzere başlangıçta Report-Only CSP (gözlemleyip sonra kalıcı CSP'ye geç)
+    # Content-Security-Policy-Report-Only "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.fonborsa.com"
+
+    # Cross-origin sertleştirme
+    Cross-Origin-Opener-Policy "same-origin"
+    Cross-Origin-Resource-Policy "same-origin"
+    X-Permitted-Cross-Domain-Policies "none"
   }
 
   # Statikler uzun cache
@@ -20,38 +34,117 @@
   # Dinamik/HTML cache'lenmesin
   @dynamic not path /_next/* /assets/* /static/* /favicon.ico /robots.txt
   header @dynamic Cache-Control "no-store"
+
+  # Hassas dosyalara erişimi engelle
+  @denies {
+    path /.git* *~ *.log *.env *.ini
+  }
+  respond @denies 404
 }
+
+# 3) Siteler
 
 fonborsa.com {
   import common
   @health path /health
   respond @health 200
-  reverse_proxy landing:3000
+
+  reverse_proxy landing:3000 {
+    # Sağlık, retry ve timeout ayarları
+    health_uri /health
+    lb_try_duration 10s
+    lb_try_interval 200ms
+    transport http {
+      read_timeout 30s
+      write_timeout 30s
+      dial_timeout 5s
+    }
+  }
 }
 
 trader.fonborsa.com {
   import common
   @health path /health
   respond @health 200
-  reverse_proxy trader:3001
+
+  reverse_proxy trader:3001 {
+    health_uri /health
+    lb_try_duration 10s
+    lb_try_interval 200ms
+    transport http {
+      read_timeout 30s
+      write_timeout 30s
+      dial_timeout 5s
+    }
+  }
 }
 
 manager.fonborsa.com {
   import common
   @health path /health
   respond @health 200
-  reverse_proxy manager:3002
+
+  reverse_proxy manager:3002 {
+    health_uri /health
+    lb_try_duration 10s
+    lb_try_interval 200ms
+    transport http {
+      read_timeout 30s
+      write_timeout 30s
+      dial_timeout 5s
+    }
+  }
 }
 
 api.fonborsa.com {
   import common
 
-  # ⚠️ CORS burada yönetilmiyor; NestJS (main.ts) enableCors kullanıyor.
-  # Preflight/OPTIONS'u da API cevaplayacak.
+  # ⚠️ CORS API tarafında (NestJS enableCors) yönetiliyor.
+  # Preflight/OPTIONS'u API cevaplayacak.
+
+  # İstek gövdesi boyut limiti (DoS'a karşı)
+  request_body {
+    max_size 10MB
+  }
 
   reverse_proxy api:4000 {
     header_up Host {host}
     header_up X-Real-IP {remote}
     # X-Forwarded-* başlıklarını Caddy zaten ekler.
+
+    health_uri /health
+    lb_try_duration 10s
+    lb_try_interval 200ms
+    transport http {
+      read_timeout 30s
+      write_timeout 30s
+      dial_timeout 5s
+    }
   }
+
+  # (Opsiyonel) Rate limiting istiyorsan Caddy'yi rate_limit modülüyle build etmen gerekir.
+  # Aşağıdaki örnek modül yüklüyse aktif edilebilir:
+  # @auth path /auth/*
+  # rate_limit @auth {
+  #   zone z_auth {
+  #     key {remote_host}
+  #     events 10
+  #     window 1m
+  #   }
+  # }
 }
+
+# 4) (Opsiyonel) JSON access log örneği
+# logs {
+#   default_level INFO
+# }
+# fonborsa.com {
+#   log {
+#     output file /var/log/caddy/landing.access.log {
+#       roll_size 50MB
+#       roll_keep 10
+#     }
+#     format json
+#   }
+#   # ... reverse_proxy ...
+# }

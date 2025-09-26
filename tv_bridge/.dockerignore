@@ -1,0 +1,45 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python cache / venv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+# Eggs / build
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Logs / reports
+*.log
+logs/
+coverage/
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Docker host files
+docker-compose*.yml

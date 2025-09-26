@@ -1,4 +1,6 @@
+// app/register/page.tsx
 "use client";
+
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import AuthCard from "@/components/auth/AuthCard";
@@ -7,6 +9,7 @@ import { Btn } from "@/components/auth/Btn";
 import { AtSign, Phone, Lock, User, Eye, EyeOff, Check, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
+import { http } from "@/lib/http";
 
 function InputShell({ children }: { children: React.ReactNode }) {
   return (
@@ -20,17 +23,18 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 
 function getErrMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "object" && e !== null && "message" in e) {
-    const msg = (e as { message?: unknown }).message;
-    if (typeof msg === "string") return msg;
+  if (typeof e === "object" && e !== null) {
+    const maybe = e as { response?: { data?: { message?: unknown } } };
+    const m = maybe.response?.data?.message;
+    if (typeof m === "string") return m;
   }
+  if (e instanceof Error && e.message) return e.message;
   return "Kayıt başarısız. Bilgileri kontrol edin.";
 }
 
 export default function RegisterPage() {
   const r = useRouter();
-  const { user, loading, register } = useAuth();
+  const { user, loading } = useAuth(); // register context'ten kaldırıldı
 
   const [nextParam, setNextParam] = useState<string>("/");
   useEffect(() => {
@@ -55,7 +59,7 @@ export default function RegisterPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
-  const [ref, setRef] = useState(""); // sadece UI
+  const [ref, setRef] = useState(""); // opsiyonel
   const [show, setShow] = useState(false);
   const [accept, setAccept] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -80,7 +84,7 @@ export default function RegisterPage() {
       lower: /[a-z]/.test(pwd),
       number: /\d/.test(pwd),
     }),
-    [pwd],
+    [pwd]
   );
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -130,15 +134,18 @@ export default function RegisterPage() {
 
     try {
       setBusy(true);
-      await register({
+      // Context yerine doğrudan API'ya POST
+      await http.post("/api/auth/register", {
         firstName: tFirst,
         lastName: tLast,
         phone: tPhone,
         email: tEmail,
         username: tUser,
         password: tPwd,
+        referral: ref.trim() || undefined,
       });
-      r.replace(next);
+      // Kayıt sonrası giriş sayfasına yönlendir
+      r.replace(`/login?next=${encodeURIComponent(next)}`);
     } catch (e: unknown) {
       setErr(getErrMsg(e));
     } finally {
@@ -327,7 +334,7 @@ export default function RegisterPage() {
         )}
 
         <Btn disabled={busy}>
-          {busy ? "Kayıt olunuyor" : "Kayıt Ol"}
+          {busy ? "Kayıt olunuyor…" : "Kayıt Ol"}
         </Btn>
 
         <div className="pt-1 text-center text-sm">

@@ -3,7 +3,7 @@
 .gitignore
 .gitattributes
 
-# Paket yöneticileri
+# Paket yöneticisi cache/log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -18,40 +18,25 @@ Thumbs.db
 
 # Node artefacts
 node_modules/
-# lock dosyalarını ASLA ignore etmeyin; deterministik build için gerekli
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
-
-# Transient / cache
-*.swp
-*.swo
-*.tmp
-*.log
-coverage/
-.cache/
-.tmp/
-
-# Frontend çıktıları (lokalde üretilenler)
-build/
 dist/
-.out/
-.next/
-.next/cache/
-storybook-static/
+build/
 
-# Test & örnekler
+# Prisma generated
+/generated/
+.prisma/
+prisma/generated/
+
+# Coverage / test
+coverage/
+.nyc_output/
 __tests__/
-cypress/
-e2e/
 *.spec.*
 *.test.*
 
-# Env / gizli
+# Env / secrets
 .env
 .env.*
 !.env.example
 
-# Docker ile ilgili yerel dosyalar (gerekmedikçe)
+# Docker compose / dockerfiles (host için)
 docker-compose*.yml
-Dockerfile

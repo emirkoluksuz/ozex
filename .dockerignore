@@ -1,0 +1,35 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Global node_modules / caches
+node_modules/
+.pnpm-store
+.pnp
+.pnp.*
+
+# Build artefacts
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Docker host files
+docker-compose*.yml
+Dockerfile

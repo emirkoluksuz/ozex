@@ -98,7 +98,18 @@ export default function LoginPage() {
         localStorage.setItem("auth_user_ns", `pending:${id}`);
         window.dispatchEvent(new Event("auth_user_ns_changed"));
       } catch {}
-      await login(id, pwdTrim, remember);
+      // login yalnızca 2 argüman alıyor
+      await login(id, pwdTrim);
+
+      // "Beni Hatırla" client-side cookie ile yönetiliyor
+      try {
+        if (remember) {
+          // 30 gün geçerli, sadece client için
+          document.cookie = `remember=1; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+        } else {
+          document.cookie = "remember=; path=/; Max-Age=0; SameSite=Lax";
+        }
+      } catch {}
       // yönlendirme effect içinde
     } catch (e: unknown) {
       const apiMsg =

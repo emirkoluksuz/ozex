@@ -163,13 +163,12 @@ export default function DepositModal({
     "min-w-[120px] h-10 rounded-md px-4 text-sm font-medium transition-colors";
 
   function copy(text: string, what: "iban" | "name" | "addr") {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(what);
-      setTimeout(() => setCopied(null), 1200);
-    });
+    void navigator.clipboard?.writeText(text);
+    setCopied(what);
+    setTimeout(() => setCopied(null), 1200);
   }
 
-  const amountNum = Number((amount || "").replace(",", "."));
+  const amountNum = Number.parseFloat((amount || "").replace(",", "."));
   const amountValid = Number.isFinite(amountNum) && amountNum > 0;
 
   const USDT_PER_USD = 1;
@@ -236,7 +235,8 @@ export default function DepositModal({
     }
   }
 
-  function handleRightAction() {
+  // ⬇⬇⬇ GÜNCELLENDİ: async + await
+  async function handleRightAction() {
     if (disabled || ok) return;
 
     if (step === "choose") {
@@ -253,8 +253,7 @@ export default function DepositModal({
     if (step === "crypto" || step === "amount") {
       if (!amountValid) return;
       if (step === "crypto" && (!coin || !network || !address)) return;
-      // ❗ UYARIYI ÖNLER: Sonucu bilerek yok sayıyoruz
-      void handleFinalize();
+      await handleFinalize();
       return;
     }
   }
@@ -280,7 +279,7 @@ export default function DepositModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Para yatır"
+        aria-label="Para Yatır"
         className="relative w-[min(96vw,700px)] overflow-hidden rounded-2xl border border-white/10 bg-[#0E2E51] shadow-2xl"
       >
         {/* Header */}

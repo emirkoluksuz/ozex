@@ -1,11 +1,90 @@
+# --- Environment & secrets ---
 .env
+.env.*
 certs/
+*.pem
 cookies.txt
 login.out
-*.log
+
+# --- Databases / runtime files ---
 *.sqlite
 *.db
+*.pid
+*.pid.lock
+*.seed
 __pycache__/
-node_modules/
+pids/
+report.*.json
+
+# --- Build artifacts ---
 dist/
 build/
+coverage/
+.nyc_output/
+.generated/
+.generated/prisma
+
+# --- Node.js dependencies ---
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# --- Python virtualenv & cache (tv_bridge) ---
+.venv/
+venv/
+env/
+ENV/
+*.py[cod]
+*$py.class
+.eggs/
+*.egg-info/
+.mypy_cache/
+.dmypy.json
+.pytest_cache/
+.pyre/
+.tox/
+.nox/
+htmlcov/
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# --- Next.js ---
+.next/
+out/
+.vercel
+
+# --- IDE / editors ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+
+# --- TypeScript ---
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Temp ---
+.tmp/
+.temp/

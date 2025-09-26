@@ -32,7 +32,7 @@ function LogoutInner() {
     }
   }, [loading, user, router, next]);
 
-  // Unmount'ta olası isteği iptal et
+  // Unmount'ta olası isteği iptal et (ileride kullanmak istersen hazır dursun)
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
@@ -62,12 +62,14 @@ function LogoutInner() {
     setErr(null);
     setBusy(true);
 
+    // Yeni bir AbortController oluşturup referansı saklıyoruz (şu an logout'a geçmiyoruz)
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
 
     try {
-      await logout({ signal: ac.signal }); // withCredentials içeride set
+      // ❗ logout() argümansız; bu yüzden signal geçmiyoruz
+      await logout();
     } catch (e: unknown) {
       setErr(getErrMsg(e));
     } finally {
